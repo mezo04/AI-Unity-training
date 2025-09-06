@@ -1,0 +1,88 @@
+using System.Collections;
+using UnityEngine;
+using Unity.MLAgents;
+using Unity.MLAgents.Sensors;
+using Unity.MLAgents.Actuators;
+
+public class CombatAgent : Agent
+{
+    public Transform opponent; // Reference to opponent transform
+    public float moveSpeed = 5f; // Movement speed
+    [SerializeField] private Health ownHealth; // Attach own Health component
+    [SerializeField] private Health opponentHealth; // Attach opponent's Health component
+
+    private float previousOwnHealth; // To detect damage taken
+    private CombatManager manager; // Reference to manager for coordination
+    private Rigidbody rb;
+
+    public override void Initialize()
+    {
+        rb = this.GetComponent<Rigidbody>();
+        manager = this.GetComponentInParent<CombatManager>(); // Assume manager is parent or find it
+        previousOwnHealth = ownHealth.currentHealth;
+
+    }
+
+    public override void OnEpisodeBegin()
+    {
+        // Reset is handled by manager, but initialize local state
+        previousOwnHealth = 100f;
+    }
+
+    public override void CollectObservations(VectorSensor sensor)
+    {
+        // Observations: relative position, normalized healths
+        sensor.AddObservation(this.transform.localPosition - opponent.localPosition); // 3D vector
+        sensor.AddObservation(ownHealth.currentHealth / 100f); // Normalized own health
+        sensor.AddObservation(opponentHealth.currentHealth / 100f); // Normalized opponent health
+    }
+
+    public override void OnActionReceived(ActionBuffers actions)
+    {
+        // Check for damage taken since last step
+        float healthDelta = previousOwnHealth - ownHealth.currentHealth;
+        if (healthDelta > 0)
+        {
+            AddReward(-0.05f * healthDelta); // Penalty scaled by damage (e.g., -0.5 for 10 damage)
+        }
+        previousOwnHealth = ownHealth.currentHealth;
+
+        int action = actions.DiscreteActions[0]; // 0=idle, 1=move toward, 2=move away, 3=attack
+
+        Vector3 direction = (opponent.localPosition - this.transform.localPosition).normalized;
+
+        if (action == 1) // Move toward
+        {
+            rb.MovePosition(this.transform.localPosition + direction * moveSpeed * Time.deltaTime);
+            AddReward(0.01f);
+        }
+        else if (action == 2) // Move away
+        {
+            rb.MovePosition(this.transform.localPosition - direction * moveSpeed * Time.deltaTime);
+        }
+        else if (action == 3) // Attack (if close)
+        {
+            if (Vector3.Distance(this.transform.localPosition, opponent.localPosition) < 1f)
+            {
+                opponentHealth.currentHealth -= 10f; // Damage opponent
+                AddReward(1f); // Reward for successful attack
+            }
+            else
+            {
+                AddReward(-0.1f); // Penalty for attacking out of range
+            }
+        }
+
+        // Existence penalty to encourage efficiency
+        AddReward(-0.001f);
+    }
+
+    public override void Heuristic(in ActionBuffers actionsOut)
+    {
+        var discreteActions = actionsOut.DiscreteActions;
+        discreteActions[0] = 0; // Default idle
+        if (Input.GetKey(KeyCode.W)) discreteActions[0] = 1; // Move toward
+        if (Input.GetKey(KeyCode.S)) discreteActions[0] = 2; // Move away
+        if (Input.GetKey(KeyCode.Space)) discreteActions[0] = 3; // Attack
+    }
+}

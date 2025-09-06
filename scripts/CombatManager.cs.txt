@@ -1,0 +1,81 @@
+using UnityEngine;
+
+public class CombatManager : MonoBehaviour
+{
+    public CombatAgent redAgent; // The training agent (e.g., enemy)
+    public CombatAgent blueAgent; // The opponent (null for static phase)
+    public Health redHealth;
+    public Health blueHealth;
+    public bool isStaticOpponent = true; // Toggle for first phase (no damage from blue)
+
+    [Header("Arena Bounds")]
+    public float boundX = 6f; // X-axis bound (absolute value)
+    public float boundZ = 6f; // Z-axis bound (absolute value)
+    
+    private void Start()
+    {
+        // Ensure initial reset on scene load
+        ResetArea();
+    }
+
+    private void Update()
+    {
+        if (blueHealth.currentHealth <= 0)
+        {
+            redAgent?.AddReward(1f); // Bonus for win
+            blueAgent?.AddReward(-1f); // Penalty for loss (if dynamic)
+            EndAllEpisodes();
+        }
+        else if (redHealth.currentHealth <= 0)
+        {
+            blueAgent?.AddReward(1f);
+            redAgent?.AddReward(-1f);
+            EndAllEpisodes();
+        }
+
+        // Out-of-bounds checks
+        if (redAgent != null && IsOutOfBounds(redAgent.transform.localPosition))
+        {
+            redAgent.AddReward(-1f); // Penalty for falling off
+            EndAllEpisodes();
+        }
+        if (blueAgent != null && IsOutOfBounds(blueAgent.transform.localPosition))
+        {
+            blueAgent.AddReward(-1f); // Penalty for falling off
+            EndAllEpisodes();
+        }
+    }
+
+    private bool IsOutOfBounds(Vector3 position)
+    {
+        return Mathf.Abs(position.x) > boundX || Mathf.Abs(position.z) > boundZ;
+    }
+
+    private void EndAllEpisodes()
+    {
+        redAgent?.EndEpisode();
+        blueAgent?.EndEpisode();
+        ResetArea();
+    }
+
+public void ResetArea()
+    {
+        if (redAgent != null)
+        {
+            redAgent.transform.localPosition = new Vector3(Random.Range(-5f, 5f), 0.6f, Random.Range(-5f, 5f));
+        }
+        if (blueAgent != null)
+        {
+            blueAgent.transform.localPosition = isStaticOpponent
+                ? new Vector3(0, 0.6f, 0) // Fixed for static
+                : new Vector3(Random.Range(-5f, 5f), 0.6f, Random.Range(-5f, 5f));
+        }
+        else if (blueHealth != null)
+        {
+            // If blueAgent is null (static phase), move its GameObject directly
+            blueHealth.transform.localPosition = new Vector3(0, 0.6f, 0);
+        }
+        if (redHealth != null) redHealth.currentHealth = 100f;
+        if (blueHealth != null) blueHealth.currentHealth = 100f;
+    }
+}
